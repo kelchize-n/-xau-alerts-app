@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "XAU Alerts",
+    "slug": "xau-alerts",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.kelchizi.xaualerts"
+    },
+    "plugins": ["expo-notifications"]
+  }
+}
