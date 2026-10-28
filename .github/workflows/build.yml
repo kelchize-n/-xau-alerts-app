@@ -10,6 +10,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: List files
+        run: |
+          pwd
+          ls -la
+          find . -name package.json -not -path "./node_modules/*"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
