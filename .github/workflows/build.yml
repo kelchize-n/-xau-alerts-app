@@ -10,12 +10,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: List files
-        run: |
-          pwd
-          ls -la
-          find . -name package.json -not -path "./node_modules/*"
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -26,6 +20,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Link Expo project
+        run: eas init --id 7fcdc767-aebd-48a2-b9d8-3e0d99ad2132 --non-interactive --force
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build APK
         run: eas build --platform android --profile preview --non-interactive
