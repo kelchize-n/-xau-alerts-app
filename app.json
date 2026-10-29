@@ -4,10 +4,19 @@
     "slug": "xau-alerts",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#000000"
+    },
     "android": {
       "package": "com.kelchizi.xaualerts"
     },
-    "plugins": ["expo-notifications"]
+    "plugins": [
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7fcdc767-aebd-48a2-b9d8-3e0d99ad2132"
+      }
+    }
   }
 }
