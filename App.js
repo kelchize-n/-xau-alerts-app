@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Chart from './Chart';
 
 // Change this to your server address once the strategy server is built.
 const SERVER_URL = '';
@@ -105,6 +106,9 @@ export default function App() {
       <View style={styles.header}>
         <Text style={styles.title}>XAUUSD</Text>
         <Text style={styles.price}>{price}</Text>
+      </View>
+      <View style={{ height: 380 }}>
+        <Chart />
       </View>
       <FlatList
         data={alerts}
