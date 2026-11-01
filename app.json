@@ -8,7 +8,8 @@
       "backgroundColor": "#000000"
     },
     "android": {
-      "package": "com.kelchizi.xaualerts"
+      "package": "com.kelchizi.xaualerts",
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-notifications"
