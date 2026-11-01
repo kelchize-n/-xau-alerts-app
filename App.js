@@ -39,22 +39,29 @@ const DEMO_ALERTS = [
 ];
 
 async function registerForPush() {
-  if (!Device.isDevice) return null;
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+  try {
+    if (!Device.isDevice) return { error: 'Not a real device' };
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return { error: 'Permission not granted: ' + finalStatus };
+    const token = await Notifications.getExpoPushTokenAsync({
+      projectId: '7fcdc767-aebd-48a2-b9d8-3e0d99ad2132',
+    });
+    return { token: token.data };
+  } catch (e) {
+    return { error: String(e && e.message ? e.message : e) };
   }
-  if (finalStatus !== 'granted') return null;
-  const token = await Notifications.getExpoPushTokenAsync();
-  return token.data;
 }
 
 export default function App() {
   const [alerts, setAlerts] = useState(DEMO_ALERTS);
   const [price, setPrice] = useState('--');
   const [pushToken, setPushToken] = useState(null);
+  const [pushError, setPushError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = async () => {
@@ -68,7 +75,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    registerForPush().then(setPushToken);
+    registerForPush().then((result) => {
+      if (result.token) setPushToken(result.token);
+      if (result.error) setPushError(result.error);
+    });
     load();
     const timer = setInterval(load, 15000);
     return () => clearInterval(timer);
@@ -119,7 +129,9 @@ export default function App() {
         ListEmptyComponent={<Text style={styles.empty}>No setups yet. Watching the market.</Text>}
       />
       <Text style={styles.token} selectable>
-        {pushToken ? 'Push token: ' + pushToken : 'Push token not available'}
+        {pushToken
+          ? 'Push token: ' + pushToken
+          : 'Push token not available' + (pushError ? ' - ' + pushError : ' - still loading')}
       </Text>
     </SafeAreaView>
   );
@@ -146,5 +158,5 @@ const styles = StyleSheet.create({
   status: { color: '#fbbf24', fontSize: 14, marginTop: 10 },
   time: { color: '#6b7280', fontSize: 12, marginTop: 4 },
   empty: { color: '#9ca3af', textAlign: 'center', marginTop: 40 },
-  token: { color: '#6b7280', fontSize: 10, padding: 10 },
+  token: { color: '#6b7280', fontSize: 12, padding: 10 },
 });
