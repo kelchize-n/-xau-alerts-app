@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "484705439504",
+    "project_id": "xau-alerts",
+    "storage_bucket": "xau-alerts.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:484705439504:android:f74041a9e7f471717e5f95",
+        "android_client_info": {
+          "package_name": "com.kelchizi.xaualerts"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBdcNmfEQMvGQuV2cZA9NEF-wjAcY01e4w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
