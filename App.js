@@ -6,8 +6,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Chart from './Chart';
 
-// Change this to your server address once the strategy server is built.
-const SERVER_URL = '';
+const SERVER_URL = 'https://xau-alerts-app.onrender.com';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
