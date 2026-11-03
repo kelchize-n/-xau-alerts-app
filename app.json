@@ -3,7 +3,7 @@
     "name": "XAU Alerts",
     "slug": "xau-alerts",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "splash": {
       "backgroundColor": "#000000"
     },
