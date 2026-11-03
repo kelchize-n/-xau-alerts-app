@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   StyleSheet, Text, View, FlatList, SafeAreaView, StatusBar, RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -57,6 +58,7 @@ async function registerForPush() {
 }
 
 export default function App() {
+  const { height } = useWindowDimensions();
   const [alerts, setAlerts] = useState(DEMO_ALERTS);
   const [price, setPrice] = useState('--');
   const [pushToken, setPushToken] = useState(null);
@@ -99,12 +101,10 @@ export default function App() {
           </Text>
           <Text style={styles.tf}>{item.timeframe}</Text>
         </View>
-        <Text style={styles.label}>Order block</Text>
-        <Text style={styles.value}>{item.orderBlock}</Text>
-        <Text style={styles.label}>Fair value gap</Text>
-        <Text style={styles.value}>{item.gap}</Text>
-        <Text style={styles.status}>{item.status}</Text>
-        <Text style={styles.time}>{item.time}</Text>
+        <Text style={styles.small}>
+          OB {item.orderBlock}   FVG {item.gap}
+        </Text>
+        <Text style={styles.status}>{item.status}  -  {item.time}</Text>
       </View>
     );
   };
@@ -116,14 +116,14 @@ export default function App() {
         <Text style={styles.title}>XAUUSD</Text>
         <Text style={styles.price}>{price}</Text>
       </View>
-      <View style={{ height: 380 }}>
+      <View style={{ height: Math.round(height * 0.62) }}>
         <Chart />
       </View>
       <FlatList
         data={alerts}
         keyExtractor={(i) => i.id}
         renderItem={renderAlert}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 10 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={<Text style={styles.empty}>No setups yet. Watching the market.</Text>}
       />
@@ -139,23 +139,21 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14' },
   header: {
-    paddingTop: 40, paddingBottom: 16, paddingHorizontal: 20,
+    paddingTop: 24, paddingBottom: 8, paddingHorizontal: 16,
     backgroundColor: '#111827', flexDirection: 'row',
     justifyContent: 'space-between', alignItems: 'center',
   },
-  title: { color: '#fbbf24', fontSize: 24, fontWeight: 'bold' },
-  price: { color: '#ffffff', fontSize: 24, fontWeight: '600' },
+  title: { color: '#fbbf24', fontSize: 20, fontWeight: 'bold' },
+  price: { color: '#ffffff', fontSize: 20, fontWeight: '600' },
   card: {
-    backgroundColor: '#111827', borderRadius: 12, padding: 16,
-    marginBottom: 12, borderLeftWidth: 5,
+    backgroundColor: '#111827', borderRadius: 8, padding: 8,
+    marginBottom: 6, borderLeftWidth: 4,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  direction: { fontSize: 20, fontWeight: 'bold' },
-  tf: { color: '#9ca3af', fontSize: 16 },
-  label: { color: '#6b7280', fontSize: 12, marginTop: 6 },
-  value: { color: '#ffffff', fontSize: 16 },
-  status: { color: '#fbbf24', fontSize: 14, marginTop: 10 },
-  time: { color: '#6b7280', fontSize: 12, marginTop: 4 },
-  empty: { color: '#9ca3af', textAlign: 'center', marginTop: 40 },
-  token: { color: '#6b7280', fontSize: 12, padding: 10 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+  direction: { fontSize: 14, fontWeight: 'bold' },
+  tf: { color: '#9ca3af', fontSize: 12 },
+  small: { color: '#ffffff', fontSize: 12 },
+  status: { color: '#fbbf24', fontSize: 11, marginTop: 2 },
+  empty: { color: '#9ca3af', textAlign: 'center', marginTop: 20, fontSize: 12 },
+  token: { color: '#6b7280', fontSize: 9, padding: 6 },
 });
