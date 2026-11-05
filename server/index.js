@@ -3,6 +3,14 @@ const { detectOrderBlocks } = require('./orderBlocks');
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_KEY;
+const PUSH_TOKEN = process.env.PUSH_TOKEN;
+
+// Remembers which order blocks were already alerted, so none repeats.
+const alerted = new Set();
+// For the first 5 minutes after a restart we only record existing order
+// blocks, so old ones do not fire a flood of alerts.
+let firstRun = true;
+setTimeout(() => { firstRun = false; }, 5 * 60 * 1000);
 
 // Twelve Data intervals. 3m is built from 1m candles (no extra API calls).
 const TIMEFRAMES = [
@@ -104,11 +112,47 @@ function setCandles(name, candles) {
   state.gaps[name] = findGaps(candles);
 }
 
+// Send a high priority push to the tablet through Expo's push service.
+async function sendPush(ob, tf) {
+  if (!PUSH_TOKEN) return;
+  const bull = ob.direction === 'bullish';
+  try {
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: PUSH_TOKEN,
+        title: (bull ? 'BULLISH' : 'BEARISH') + ' ORDER BLOCK ' + tf,
+        body: 'Break of structure confirmed. Range ' +
+          ob.bottom.toFixed(2) + ' - ' + ob.top.toFixed(2),
+        sound: 'default',
+        priority: 'high',
+        channelId: 'alarm',
+      }),
+    });
+  } catch (e) {
+    console.error('Push failed', e.message);
+  }
+}
+
+// Alert once for each newly confirmed order block.
+function checkAlerts(name) {
+  const list = state.obs[name] || [];
+  list.forEach((ob) => {
+    if (ob.status !== 'confirmed') return;
+    const id = name + '-' + ob.startTime + '-' + ob.bosTime;
+    if (alerted.has(id)) return;
+    alerted.add(id);
+    if (!firstRun) sendPush(ob, name);
+  });
+}
+
 // Run order block detection for one timeframe. Errors are logged, not thrown,
 // so a detection problem never stops the candle fetching.
 function detectFor(name) {
   try {
     state.obs[name] = detectOrderBlocks(state.candles[name] || [], name);
+    checkAlerts(name);
   } catch (e) {
     console.error('OB detection failed', name, e.message);
   }
