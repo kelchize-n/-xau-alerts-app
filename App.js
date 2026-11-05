@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, Text, View, FlatList, SafeAreaView, StatusBar, RefreshControl,
-  TouchableOpacity, useWindowDimensions,
+  TouchableOpacity, useWindowDimensions, Linking, Platform,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -22,9 +22,58 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Loud alarm channel: max importance, alarm volume, asks to bypass do not disturb.
+// The server sends its pushes to this channel name ("alarm").
+async function setupAlarmChannel() {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync('alarm', {
+      name: 'Order block alarm',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 600, 300, 600, 300, 600],
+      enableVibrate: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.ALARM,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
+    });
+  } catch (e) {
+    console.log('Alarm channel failed', e);
+  }
+}
+
+// Opens the Android screen where you allow this app to override do not disturb
+async function openDndSettings() {
+  try {
+    await Linking.sendIntent('android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS');
+  } catch (e) {
+    Linking.openSettings();
+  }
+}
+
+// Fires a local test notification on the alarm channel
+async function testAlarm() {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'TEST ORDER BLOCK',
+        body: 'This is how a real alert will sound.',
+        sound: 'default',
+      },
+      trigger: { channelId: 'alarm' },
+    });
+  } catch (e) {
+    console.log('Test alarm failed', e);
+  }
+}
+
 async function registerForPush() {
   try {
     if (!Device.isDevice) return { error: 'Not a real device' };
+    await setupAlarmChannel();
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
     if (existing !== 'granted') {
@@ -180,6 +229,14 @@ export default function App() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListHeaderComponent={
           <View>
+            <View style={styles.actionRow}>
+              <TouchableOpacity onPress={openDndSettings} style={styles.actionBtn}>
+                <Text style={styles.actionText}>Allow Do Not Disturb</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={testAlarm} style={styles.actionBtn}>
+                <Text style={styles.actionText}>Test alarm</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.small}>
               Last update: {lastUpdate ? new Date(lastUpdate).toLocaleTimeString() : '--'}
             </Text>
@@ -234,6 +291,12 @@ const styles = StyleSheet.create({
   small: { color: '#ffffff', fontSize: 12, marginTop: 4 },
   muted: { color: '#9ca3af', fontSize: 12, marginTop: 2 },
   error: { color: '#ef4444', fontSize: 12, marginTop: 6 },
+  actionRow: { flexDirection: 'row', marginBottom: 6 },
+  actionBtn: {
+    backgroundColor: '#fbbf24', paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 6, marginRight: 8,
+  },
+  actionText: { color: '#111827', fontSize: 12, fontWeight: 'bold' },
   toggleRow: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginTop: 12, marginBottom: 6,
