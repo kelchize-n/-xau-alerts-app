@@ -3,10 +3,9 @@ const http = require('http');
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_KEY;
 
-// Each timeframe: Twelve Data interval name, candles to keep, refresh time in minutes
+// Twelve Data intervals. 3m is built from 1m candles (no extra API calls).
 const TIMEFRAMES = [
   { name: '1m',  interval: '1min',  size: 150, every: 5 },
-  { name: '3m',  interval: '3min',  size: 150, every: 15 },
   { name: '5m',  interval: '5min',  size: 150, every: 10 },
   { name: '15m', interval: '15min', size: 150, every: 15 },
   { name: '30m', interval: '30min', size: 150, every: 30 },
@@ -19,6 +18,7 @@ let state = {
   candles: {},
   gaps: {},
   alerts: [],
+  errors: {},
   lastUpdate: null,
   lastError: null,
 };
@@ -40,6 +40,27 @@ async function fetchCandles(interval, size) {
     low: parseFloat(c.low),
     close: parseFloat(c.close),
   }));
+}
+
+// Combine consecutive 1m candles into larger candles (e.g. 3 x 1m = 3m).
+// Only complete, aligned groups are kept, so the forming candle is dropped.
+function aggregate(candles, minutes) {
+  const groups = new Map();
+  candles.forEach((c) => {
+    const ms = Date.parse(c.time.replace(' ', 'T') + 'Z');
+    const key = Math.floor(ms / (minutes * 60000));
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  });
+  return [...groups.values()]
+    .filter((g) => g.length === minutes)
+    .map((g) => ({
+      time: g[0].time,
+      open: g[0].open,
+      high: Math.max(...g.map((c) => c.high)),
+      low: Math.min(...g.map((c) => c.low)),
+      close: g[g.length - 1].close,
+    }));
 }
 
 // Fair value gap: candle 1 and candle 3 do not overlap.
@@ -75,21 +96,36 @@ function findGaps(candles) {
   return gaps;
 }
 
+function setCandles(name, candles) {
+  state.candles[name] = candles;
+  state.gaps[name] = findGaps(candles);
+}
+
+function refreshLastError() {
+  const keys = Object.keys(state.errors);
+  state.lastError = keys.length
+    ? keys.map((k) => k + ': ' + state.errors[k]).join(' | ')
+    : null;
+}
+
 async function updateTimeframe(tf) {
   try {
     if (!API_KEY) throw new Error('TWELVE_DATA_KEY is not set');
     const candles = await fetchCandles(tf.interval, tf.size);
-    state.candles[tf.name] = candles;
-    state.gaps[tf.name] = findGaps(candles);
+    setCandles(tf.name, candles);
+    if (tf.name === '1m') {
+      setCandles('3m', aggregate(candles, 3));
+    }
     if (tf.name === '5m') {
       state.price = candles[candles.length - 1].close;
     }
     state.lastUpdate = new Date().toISOString();
-    state.lastError = null;
-    // Strategy detection will be added here in the next step
+    delete state.errors[tf.name];
   } catch (e) {
-    state.lastError = tf.name + ': ' + String(e.message || e);
+    state.errors[tf.name] = String(e.message || e);
   }
+  refreshLastError();
+  // Strategy detection will be added here in the next step
 }
 
 // Start each timeframe a few seconds apart so calls do not bunch up
@@ -103,16 +139,18 @@ TIMEFRAMES.forEach((tf, index) => {
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
-  if (req.url === '/alerts') {
+  // Ignore query strings like ?v=3 when matching routes
+  const path = req.url.split('?')[0];
+  if (path === '/alerts') {
     res.end(JSON.stringify({ price: state.price, alerts: state.alerts }));
-  } else if (req.url === '/gaps') {
+  } else if (path === '/gaps') {
     const summary = {};
     Object.keys(state.gaps).forEach((name) => {
       const open = state.gaps[name].filter((g) => !g.filled);
       summary[name] = { total: state.gaps[name].length, open: open.length, gaps: open };
     });
     res.end(JSON.stringify({ price: state.price, lastUpdate: state.lastUpdate, timeframes: summary }));
-  } else if (req.url === '/status') {
+  } else if (path === '/status') {
     const counts = {};
     Object.keys(state.candles).forEach((name) => { counts[name] = state.candles[name].length; });
     res.end(JSON.stringify({
@@ -121,6 +159,7 @@ const server = http.createServer((req, res) => {
       candles: counts,
       lastUpdate: state.lastUpdate,
       lastError: state.lastError,
+      errors: state.errors,
     }));
   } else {
     res.end(JSON.stringify({ ok: true, name: 'XAU Alert Server' }));
