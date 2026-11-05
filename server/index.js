@@ -30,6 +30,7 @@ async function fetchCandles(interval, size) {
     'https://api.twelvedata.com/time_series?symbol=XAU/USD' +
     '&interval=' + interval +
     '&outputsize=' + size +
+    '&timezone=UTC' +
     '&apikey=' + API_KEY;
   const res = await fetch(url);
   const data = await res.json();
