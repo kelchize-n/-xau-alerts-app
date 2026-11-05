@@ -12,6 +12,7 @@ const PROJECT_ID = '7fcdc767-aebd-48a2-b9d8-3e0d99ad2132';
 const POLL_MS = 15000;
 const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h'];
 const MAX_PER_TF = 5;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -39,6 +40,16 @@ async function registerForPush() {
 }
 
 const fmt = (n) => (typeof n === 'number' ? n.toFixed(2) : '-');
+
+// Server times are UTC strings like "2026-11-05 15:51:00".
+// Convert to the phone's local time, e.g. "Nov 5, 15:51".
+function localTime(t) {
+  if (!t) return '-';
+  const d = new Date(String(t).replace(' ', 'T') + 'Z');
+  if (isNaN(d.getTime())) return String(t);
+  const pad = (n) => (n < 10 ? '0' + n : String(n));
+  return MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
 
 // Flatten order blocks into rows: one header per timeframe, then its boxes
 function buildRows(timeframes, showInvalid) {
@@ -81,9 +92,9 @@ function ObCard({ ob }) {
         <Text style={styles.statusTag}>{ob.status}</Text>
       </View>
       <Text style={styles.small}>Range {fmt(ob.bottom)} - {fmt(ob.top)}</Text>
-      <Text style={styles.muted}>Start {ob.startTime}</Text>
+      <Text style={styles.muted}>Start {localTime(ob.startTime)}</Text>
       <Text style={styles.muted}>
-        BOS {ob.bosTime}  ·  Swept {fmt(ob.sweptLevel)} at {ob.sweptTime}
+        BOS {localTime(ob.bosTime)}  ·  Swept {fmt(ob.sweptLevel)} at {localTime(ob.sweptTime)}
       </Text>
     </View>
   );
