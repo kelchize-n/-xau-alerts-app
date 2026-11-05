@@ -9,7 +9,12 @@
     },
     "android": {
       "package": "com.kelchizi.xaualerts",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "ACCESS_NOTIFICATION_POLICY",
+        "USE_FULL_SCREEN_INTENT",
+        "VIBRATE"
+      ]
     },
     "plugins": [
       "expo-notifications"
