@@ -1,4 +1,5 @@
 const http = require('http');
+const { detectOrderBlocks } = require('./orderBlocks');
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_KEY;
@@ -17,6 +18,7 @@ let state = {
   price: null,
   candles: {},
   gaps: {},
+  obs: {},
   alerts: [],
   errors: {},
   lastUpdate: null,
@@ -101,6 +103,16 @@ function setCandles(name, candles) {
   state.gaps[name] = findGaps(candles);
 }
 
+// Run order block detection for one timeframe. Errors are logged, not thrown,
+// so a detection problem never stops the candle fetching.
+function detectFor(name) {
+  try {
+    state.obs[name] = detectOrderBlocks(state.candles[name] || [], name);
+  } catch (e) {
+    console.error('OB detection failed', name, e.message);
+  }
+}
+
 function refreshLastError() {
   const keys = Object.keys(state.errors);
   state.lastError = keys.length
@@ -113,8 +125,10 @@ async function updateTimeframe(tf) {
     if (!API_KEY) throw new Error('TWELVE_DATA_KEY is not set');
     const candles = await fetchCandles(tf.interval, tf.size);
     setCandles(tf.name, candles);
+    detectFor(tf.name);
     if (tf.name === '1m') {
       setCandles('3m', aggregate(candles, 3));
+      detectFor('3m');
     }
     if (tf.name === '5m') {
       state.price = candles[candles.length - 1].close;
@@ -125,7 +139,6 @@ async function updateTimeframe(tf) {
     state.errors[tf.name] = String(e.message || e);
   }
   refreshLastError();
-  // Strategy detection will be added here in the next step
 }
 
 // Start each timeframe a few seconds apart so calls do not bunch up
@@ -150,6 +163,8 @@ const server = http.createServer((req, res) => {
       summary[name] = { total: state.gaps[name].length, open: open.length, gaps: open };
     });
     res.end(JSON.stringify({ price: state.price, lastUpdate: state.lastUpdate, timeframes: summary }));
+  } else if (path === '/obs') {
+    res.end(JSON.stringify({ price: state.price, lastUpdate: state.lastUpdate, timeframes: state.obs }));
   } else if (path === '/status') {
     const counts = {};
     Object.keys(state.candles).forEach((name) => { counts[name] = state.candles[name].length; });
