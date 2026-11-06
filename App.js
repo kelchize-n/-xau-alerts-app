@@ -14,6 +14,11 @@ const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h'];
 const MAX_PER_TF = 5;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// New channel ID. Android locks the importance of an existing channel,
+// so the old "alarm" channel (created at low importance) cannot be fixed.
+const ALARM_CHANNEL = 'obalarm';
+const OLD_ALARM_CHANNEL = 'alarm';
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -23,11 +28,16 @@ Notifications.setNotificationHandler({
 });
 
 // Loud alarm channel: max importance, alarm volume, asks to bypass do not disturb.
-// The server sends its pushes to this channel name ("alarm").
+// The server sends its pushes to this channel name ("obalarm").
 async function setupAlarmChannel() {
   if (Platform.OS !== 'android') return;
   try {
-    await Notifications.setNotificationChannelAsync('alarm', {
+    await Notifications.deleteNotificationChannelAsync(OLD_ALARM_CHANNEL);
+  } catch (e) {
+    // Old channel may not exist; that is fine
+  }
+  try {
+    await Notifications.setNotificationChannelAsync(ALARM_CHANNEL, {
       name: 'Order block alarm',
       importance: Notifications.AndroidImportance.MAX,
       sound: 'default',
@@ -63,7 +73,7 @@ async function testAlarm() {
         body: 'This is how a real alert will sound.',
         sound: 'default',
       },
-      trigger: { channelId: 'alarm' },
+      trigger: { channelId: ALARM_CHANNEL },
     });
   } catch (e) {
     console.log('Test alarm failed', e);
@@ -217,7 +227,7 @@ export default function App() {
         </View>
       </View>
 
-      <View style={{ height: Math.round(height * 0.62) }}>
+      <View style={{ height: Math.round(height * 0.40) }}>
         <Chart />
       </View>
 
