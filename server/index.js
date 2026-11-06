@@ -122,6 +122,7 @@ function setCandles(name, candles) {
 }
 
 // Send a high priority push to the tablet through Expo's push service.
+// channelId must match the channel created in app/App.js (ALARM_CHANNEL = 'obalarm').
 async function sendPush(ob, tf, repeat) {
   if (!PUSH_TOKEN) return;
   const bull = ob.direction === 'bullish';
@@ -137,7 +138,7 @@ async function sendPush(ob, tf, repeat) {
           (repeat ? '' : ' - break confirmed'),
         sound: 'default',
         priority: 'high',
-        channelId: 'alarm',
+        channelId: 'obalarm',
       }),
     });
   } catch (e) {
