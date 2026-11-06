@@ -5,6 +5,9 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_KEY;
 const PUSH_TOKEN = process.env.PUSH_TOKEN;
 
+// Only these timeframes send push alerts. Others still show cards.
+const ALERT_TIMEFRAMES = ['5m', '15m'];
+
 // Remembers which order blocks were already alerted, so none repeats.
 const alerted = new Set();
 // For the first 5 minutes after a restart we only record existing order
@@ -13,6 +16,7 @@ let firstRun = true;
 setTimeout(() => { firstRun = false; }, 5 * 60 * 1000);
 
 // Twelve Data intervals. 3m is built from 1m candles (no extra API calls).
+// every = minutes between refreshes.
 const TIMEFRAMES = [
   { name: '1m',  interval: '1min',  size: 150, every: 5 },
   { name: '5m',  interval: '5min',  size: 150, every: 10 },
@@ -107,6 +111,7 @@ function findGaps(candles) {
   return gaps;
 }
 
+// Store closed candles only and recalculate gaps from them
 function setCandles(name, candles) {
   state.candles[name] = candles;
   state.gaps[name] = findGaps(candles);
@@ -135,15 +140,29 @@ async function sendPush(ob, tf) {
   }
 }
 
-// Alert once for each newly confirmed order block.
+// Alert once for each order block, the first time it is seen (not invalidated).
+// Only 5m and 15m send alerts.
 function checkAlerts(name) {
+  if (!ALERT_TIMEFRAMES.includes(name)) return;
   const list = state.obs[name] || [];
   list.forEach((ob) => {
-    if (ob.status !== 'confirmed') return;
+    if (ob.status === 'invalidated') return;
     const id = name + '-' + ob.startTime + '-' + ob.bosTime;
     if (alerted.has(id)) return;
     alerted.add(id);
-    if (!firstRun) sendPush(ob, name);
+    if (firstRun) return;
+
+    state.alerts.unshift({
+      time: new Date().toISOString(),
+      timeframe: name,
+      direction: ob.direction,
+      top: ob.top,
+      bottom: ob.bottom,
+      bosTime: ob.bosTime,
+      startTime: ob.startTime,
+    });
+    state.alerts = state.alerts.slice(0, 50);
+    sendPush(ob, name);
   });
 }
 
@@ -169,14 +188,21 @@ async function updateTimeframe(tf) {
   try {
     if (!API_KEY) throw new Error('TWELVE_DATA_KEY is not set');
     const candles = await fetchCandles(tf.interval, tf.size);
-    setCandles(tf.name, candles);
+    if (!candles.length) throw new Error('no candles returned');
+
+    // The newest candle is still forming. Drop it before detection.
+    const closed = candles.slice(0, -1);
+
+    // Live price: close of the newest 1m candle (even if still forming)
+    if (tf.name === '1m') {
+      state.price = candles[candles.length - 1].close;
+    }
+
+    setCandles(tf.name, closed);
     detectFor(tf.name);
     if (tf.name === '1m') {
-      setCandles('3m', aggregate(candles, 3));
+      setCandles('3m', aggregate(closed, 3));
       detectFor('3m');
-    }
-    if (tf.name === '5m') {
-      state.price = candles[candles.length - 1].close;
     }
     state.lastUpdate = new Date().toISOString();
     delete state.errors[tf.name];
