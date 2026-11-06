@@ -18,13 +18,13 @@ let firstRun = true;
 setTimeout(() => { firstRun = false; }, 5 * 60 * 1000);
 
 // Twelve Data intervals. 3m is built from 1m candles (no extra API calls).
-// every = minutes between refreshes.
+// every = minutes between refreshes. size = candles requested per call.
 const TIMEFRAMES = [
-  { name: '1m',  interval: '1min',  size: 150, every: 5 },
-  { name: '5m',  interval: '5min',  size: 150, every: 5 },
-  { name: '15m', interval: '15min', size: 150, every: 15 },
-  { name: '30m', interval: '30min', size: 150, every: 30 },
-  { name: '1h',  interval: '1h',    size: 150, every: 60 },
+  { name: '1m',  interval: '1min',  size: 150,  every: 5 },
+  { name: '5m',  interval: '5min',  size: 1000, every: 5 },
+  { name: '15m', interval: '15min', size: 1000, every: 15 },
+  { name: '30m', interval: '30min', size: 150,  every: 30 },
+  { name: '1h',  interval: '1h',    size: 150,  every: 60 },
 ];
 
 // Latest data held in memory
