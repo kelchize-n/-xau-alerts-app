@@ -2,60 +2,183 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-const buildHtml = (style) => `
+const SERVER_URL = 'https://xau-alerts-app.onrender.com';
+const TIMEFRAMES = ['5m', '15m', '1h'];
+
+const buildHtml = (tf, style) => `
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>html,body{margin:0;padding:0;height:100%;background:#0b0f1a;}</style>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
+#wrap{position:relative;width:100%;height:100%;}
+#chart{position:absolute;left:0;top:0;right:0;bottom:0;}
+#overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;overflow:hidden;}
+.box{position:absolute;box-sizing:border-box;}
+.bull{background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);}
+.bear{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.55);}
+#msg{position:absolute;left:6px;top:4px;color:#9ca3af;font:12px sans-serif;display:none;}
+</style>
 </head>
 <body>
-<div class="tradingview-widget-container" style="height:100%;width:100%">
-  <div id="tv_chart" style="height:100%;width:100%"></div>
+<div id="wrap">
+  <div id="chart"></div>
+  <div id="overlay"></div>
+  <div id="msg"></div>
 </div>
-<script src="https://s3.tradingview.com/tv.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-  new TradingView.widget({
-    autosize: true,
-    symbol: "OANDA:XAUUSD",
-    interval: "15",
-    timezone: "Etc/UTC",
-    theme: "dark",
-    style: "${style}",
-    locale: "en",
-    hide_top_toolbar: false,
-    allow_symbol_change: false,
-    container_id: "tv_chart"
+(function () {
+  var TF = "${tf}";
+  var STYLE = "${style}";
+  var BASE = "${SERVER_URL}";
+  var chartEl = document.getElementById('chart');
+  var overlay = document.getElementById('overlay');
+  var msg = document.getElementById('msg');
+
+  function showMsg(text) {
+    msg.textContent = text;
+    msg.style.display = text ? 'block' : 'none';
+  }
+  showMsg('Loading...');
+
+  var chart = LightweightCharts.createChart(chartEl, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    layout: { background: { color: '#0b0f1a' }, textColor: '#d1d5db' },
+    grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
+    timeScale: { timeVisible: true, borderColor: '#374151' },
+    rightPriceScale: { borderColor: '#374151' },
   });
+
+  var series;
+  if (STYLE === '2') {
+    series = chart.addLineSeries({ color: '#f5b301', lineWidth: 2 });
+  } else {
+    series = chart.addCandlestickSeries({
+      upColor: '#22c55e',
+      downColor: '#ef4444',
+      borderVisible: false,
+      wickUpColor: '#22c55e',
+      wickDownColor: '#ef4444',
+    });
+  }
+
+  var firstLoad = true;
+  var lastTime = null;
+  var obs = [];
+
+  // Server times are UTC strings like "2026-11-05 15:51:00"
+  function toSec(t) {
+    return Math.floor(Date.parse(String(t).replace(' ', 'T') + 'Z') / 1000);
+  }
+
+  // Draw each live order block as a faint box from its start to the newest candle
+  function drawBoxes() {
+    overlay.innerHTML = '';
+    var ts = chart.timeScale();
+    var width = chartEl.clientWidth;
+    var rightX = lastTime === null ? null : ts.timeToCoordinate(lastTime);
+    obs.forEach(function (ob) {
+      var x1 = ts.timeToCoordinate(toSec(ob.startTime));
+      var y1 = series.priceToCoordinate(ob.top);
+      var y2 = series.priceToCoordinate(ob.bottom);
+      if (x1 === null || y1 === null || y2 === null) return;
+      var x2 = rightX === null ? width : rightX;
+      var left = Math.max(0, Math.min(x1, x2));
+      var right = Math.min(width, Math.max(x1, x2));
+      if (right <= left) return;
+      var div = document.createElement('div');
+      div.className = 'box ' + (ob.direction === 'bullish' ? 'bull' : 'bear');
+      div.style.left = left + 'px';
+      div.style.width = (right - left) + 'px';
+      div.style.top = Math.min(y1, y2) + 'px';
+      div.style.height = Math.max(2, Math.abs(y2 - y1)) + 'px';
+      overlay.appendChild(div);
+    });
+  }
+
+  function load() {
+    fetch(BASE + '/chart?tf=' + TF + '&t=' + Date.now())
+      .then(function (r) {
+        if (!r.ok) throw new Error('server ' + r.status);
+        return r.json();
+      })
+      .then(function (json) {
+        var candles = json.candles || [];
+        if (STYLE === '2') {
+          series.setData(candles.map(function (c) {
+            return { time: toSec(c.time), value: c.close };
+          }));
+        } else {
+          series.setData(candles.map(function (c) {
+            return { time: toSec(c.time), open: c.open, high: c.high, low: c.low, close: c.close };
+          }));
+        }
+        lastTime = candles.length ? toSec(candles[candles.length - 1].time) : null;
+        obs = json.obs || [];
+        if (firstLoad && candles.length) {
+          chart.timeScale().fitContent();
+          firstLoad = false;
+        }
+        showMsg('');
+        drawBoxes();
+      })
+      .catch(function (e) {
+        showMsg('Chart not loaded: ' + e.message + '. Retrying...');
+      });
+  }
+
+  chart.timeScale().subscribeVisibleTimeRangeChange(drawBoxes);
+  window.addEventListener('resize', function () {
+    chart.resize(window.innerWidth, window.innerHeight);
+    drawBoxes();
+  });
+
+  load();
+  setInterval(load, 15000);
+})();
 </script>
 </body>
 </html>
 `;
 
 export default function Chart() {
-  // TradingView style codes: "1" = candlesticks, "2" = line
+  const [tf, setTf] = useState('5m');
+  // TradingView-style codes kept for the toggle: "1" = candles, "2" = line
   const [style, setStyle] = useState('1');
 
   return (
     <View style={styles.container}>
       <View style={styles.toggleRow}>
+        {TIMEFRAMES.map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.toggle, tf === t && styles.toggleActive]}
+            onPress={() => setTf(t)}
+          >
+            <Text style={[styles.toggleText, tf === t && styles.toggleTextActive]}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+        <View style={styles.spacer} />
         <TouchableOpacity
           style={[styles.toggle, style === '1' && styles.toggleActive]}
           onPress={() => setStyle('1')}
         >
-          <Text style={styles.toggleText}>Candles</Text>
+          <Text style={[styles.toggleText, style === '1' && styles.toggleTextActive]}>Candles</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.toggle, style === '2' && styles.toggleActive]}
           onPress={() => setStyle('2')}
         >
-          <Text style={styles.toggleText}>Line</Text>
+          <Text style={[styles.toggleText, style === '2' && styles.toggleTextActive]}>Line</Text>
         </TouchableOpacity>
       </View>
       <WebView
-        key={style}
+        key={tf + style}
         originWhitelist={['*']}
-        source={{ html: buildHtml(style) }}
+        source={{ html: buildHtml(tf, style) }}
         style={styles.web}
         javaScriptEnabled
         domStorageEnabled
@@ -66,15 +189,17 @@ export default function Chart() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f1a' },
-  toggleRow: { flexDirection: 'row', padding: 8 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', padding: 6 },
   toggle: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 8,
     backgroundColor: '#1a2133',
-    marginRight: 8,
+    marginRight: 6,
   },
   toggleActive: { backgroundColor: '#f5b301' },
-  toggleText: { color: '#ffffff', fontWeight: 'bold' },
+  toggleText: { color: '#ffffff', fontWeight: 'bold', fontSize: 12 },
+  toggleTextActive: { color: '#111827' },
+  spacer: { flex: 1 },
   web: { flex: 1, backgroundColor: '#0b0f1a' },
 });
