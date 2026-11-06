@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, Text, View, FlatList, SafeAreaView, StatusBar, RefreshControl,
-  TouchableOpacity, useWindowDimensions, Linking, Platform,
+  TouchableOpacity, useWindowDimensions, Linking, Platform, Alert,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -14,8 +14,7 @@ const TF_ORDER = ['1m', '3m', '5m', '15m', '30m', '1h'];
 const MAX_PER_TF = 5;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// New channel ID. Android locks the importance of an existing channel,
-// so the old "alarm" channel (created at low importance) cannot be fixed.
+// Channel ID. The server sends its pushes to this channel name too.
 const ALARM_CHANNEL = 'obalarm';
 const OLD_ALARM_CHANNEL = 'alarm';
 
@@ -28,7 +27,6 @@ Notifications.setNotificationHandler({
 });
 
 // Loud alarm channel: max importance, alarm volume, asks to bypass do not disturb.
-// The server sends its pushes to this channel name ("obalarm").
 async function setupAlarmChannel() {
   if (Platform.OS !== 'android') return;
   try {
@@ -64,19 +62,28 @@ async function openDndSettings() {
   }
 }
 
-// Fires a local test notification on the alarm channel
+// Fires a local test notification on the alarm channel, one second from now
 async function testAlarm() {
   try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Test alarm', 'Notifications are not allowed for this app. Allow them in Settings.');
+      return;
+    }
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'TEST ORDER BLOCK',
         body: 'This is how a real alert will sound.',
         sound: 'default',
       },
-      trigger: { channelId: ALARM_CHANNEL },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 1,
+        channelId: ALARM_CHANNEL,
+      },
     });
   } catch (e) {
-    console.log('Test alarm failed', e);
+    Alert.alert('Test alarm failed', String(e && e.message ? e.message : e));
   }
 }
 
