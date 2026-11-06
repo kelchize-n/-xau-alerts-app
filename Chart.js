@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const SERVER_URL = 'https://xau-alerts-app.onrender.com';
-const TIMEFRAMES = ['5m', '15m', '1h'];
+const TIMEFRAMES = ['3m', '5m', '15m', '1h'];
 
 const buildHtml = (tf, style) => `
 <!DOCTYPE html>
