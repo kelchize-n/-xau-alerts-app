@@ -7,6 +7,8 @@ const PUSH_TOKEN = process.env.PUSH_TOKEN;
 
 // Only these timeframes send push alerts. Others still show cards.
 const ALERT_TIMEFRAMES = ['5m', '15m'];
+// An alert needs the break on one of the last this-many closed candles.
+const ALERT_RECENT_BARS = 2;
 
 // Remembers which order blocks were already alerted, so none repeats.
 const alerted = new Set();
@@ -19,7 +21,7 @@ setTimeout(() => { firstRun = false; }, 5 * 60 * 1000);
 // every = minutes between refreshes.
 const TIMEFRAMES = [
   { name: '1m',  interval: '1min',  size: 150, every: 5 },
-  { name: '5m',  interval: '5min',  size: 150, every: 10 },
+  { name: '5m',  interval: '5min',  size: 150, every: 5 },
   { name: '15m', interval: '15min', size: 150, every: 15 },
   { name: '30m', interval: '30min', size: 150, every: 30 },
   { name: '1h',  interval: '1h',    size: 150, every: 60 },
@@ -140,13 +142,17 @@ async function sendPush(ob, tf) {
   }
 }
 
-// Alert once for each order block, the first time it is seen (not invalidated).
-// Only 5m and 15m send alerts.
+// Alert once for each order block whose break is on one of the last
+// ALERT_RECENT_BARS closed candles. Only 5m and 15m send alerts.
 function checkAlerts(name) {
   if (!ALERT_TIMEFRAMES.includes(name)) return;
+  const n = (state.candles[name] || []).length;
   const list = state.obs[name] || [];
   list.forEach((ob) => {
-    if (ob.status === 'invalidated') return;
+    // Only a fresh, not-invalidated break counts
+    if (ob.status !== 'confirmed') return;
+    if (ob.bosIndex < n - ALERT_RECENT_BARS) return;
+
     const id = name + '-' + ob.startTime + '-' + ob.bosTime;
     if (alerted.has(id)) return;
     alerted.add(id);
