@@ -77,7 +77,7 @@ async function testAlarm() {
         sound: 'default',
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        type: 'timeInterval',
         seconds: 1,
         channelId: ALARM_CHANNEL,
       },
