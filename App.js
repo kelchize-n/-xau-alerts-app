@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, Text, View, FlatList, SafeAreaView, StatusBar, RefreshControl,
-  TouchableOpacity, useWindowDimensions, Linking, Platform, Alert, AppState,
+  TouchableOpacity, useWindowDimensions, Linking, Platform, AppState,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -59,31 +59,6 @@ async function openDndSettings() {
     await Linking.sendIntent('android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS');
   } catch (e) {
     Linking.openSettings();
-  }
-}
-
-// Fires a local test notification on the alarm channel, one second from now
-async function testAlarm() {
-  try {
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Test alarm', 'Notifications are not allowed for this app. Allow them in Settings.');
-      return;
-    }
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'TEST ORDER BLOCK',
-        body: 'This is how a real alert will sound.',
-        sound: 'default',
-      },
-      trigger: {
-        type: 'timeInterval',
-        seconds: 1,
-        channelId: ALARM_CHANNEL,
-      },
-    });
-  } catch (e) {
-    Alert.alert('Test alarm failed', String(e && e.message ? e.message : e));
   }
 }
 
@@ -248,7 +223,7 @@ export default function App() {
         </View>
       </View>
 
-      <View style={{ height: Math.round(height * 0.30) }}>
+      <View style={{ height: Math.round(height * 0.50) }}>
         <Chart />
       </View>
 
@@ -263,9 +238,6 @@ export default function App() {
             <View style={styles.actionRow}>
               <TouchableOpacity onPress={openDndSettings} style={styles.actionBtn}>
                 <Text style={styles.actionText}>Allow Do Not Disturb</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={testAlarm} style={styles.actionBtn}>
-                <Text style={styles.actionText}>Test alarm</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.small}>
