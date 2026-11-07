@@ -45,6 +45,17 @@ let state = {
   lastError: null,
 };
 
+// Gold market is closed from Friday 22:00 UTC to Sunday 22:00 UTC.
+// No alerts are sent while it is closed.
+function marketOpen(date = new Date()) {
+  const day = date.getUTCDay(); // 0 = Sunday, 5 = Friday, 6 = Saturday
+  const hour = date.getUTCHours();
+  if (day === 6) return false;
+  if (day === 5 && hour >= 22) return false;
+  if (day === 0 && hour < 22) return false;
+  return true;
+}
+
 async function fetchCandles(interval, size) {
   const url =
     'https://api.twelvedata.com/time_series?symbol=XAU/USD' +
@@ -169,10 +180,12 @@ function sendAlert(name, ob, repeat) {
 // New live box: alert once if its break is fresh (and not during startup).
 // Then one repeat, at most MAX_PUSHES in total. No more pushes after that,
 // or once the app has been opened since the last push.
+// While the market is closed, no pushes are sent at all.
 function checkAlerts(name) {
   if (!ALERT_TIMEFRAMES.includes(name)) return;
   const n = (state.candles[name] || []).length;
   const now = Date.now();
+  const open = marketOpen();
   const live = (state.obs[name] || []).filter((ob) => ob.status !== 'invalidated');
   const liveIds = new Set();
 
@@ -180,6 +193,14 @@ function checkAlerts(name) {
     const id = name + '-' + ob.startTime + '-' + ob.bosTime;
     liveIds.add(id);
     const entry = alertState.get(id);
+
+    if (!open) {
+      // Market closed: send nothing, and mark this box as finished so it
+      // does not repeat when the market reopens.
+      if (entry) entry.pushes = MAX_PUSHES;
+      else alertState.set(id, { pushes: MAX_PUSHES, lastSent: 0 });
+      return;
+    }
 
     if (!entry) {
       const fresh = ob.status === 'confirmed' && ob.bosIndex >= n - ALERT_RECENT_BARS;
