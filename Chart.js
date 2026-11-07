@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const SERVER_URL = 'https://xau-alerts-app.onrender.com';
+// 3m is chart-only (no order blocks). 5m, 15m, 1h show order block boxes.
 const TIMEFRAMES = ['3m', '5m', '15m', '1h'];
 
 const buildHtml = (tf, style) => `
@@ -15,9 +16,9 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
 #wrap{position:relative;width:100%;height:100%;}
 #chart{position:absolute;left:0;top:0;right:0;bottom:0;}
 #overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;overflow:hidden;}
-.box{position:absolute;box-sizing:border-box;}
-.bull{background:rgba(34,197,94,0.22);border:1px solid rgba(34,197,94,0.8);}
-.bear{background:rgba(239,68,68,0.22);border:1px solid rgba(239,68,68,0.8);}
+.box{position:absolute;box-sizing:border-box;display:none;}
+.bull{background:rgba(34,197,94,0.55);border:1px solid #22c55e;}
+.bear{background:rgba(239,68,68,0.55);border:1px solid #ef4444;}
 #msg{position:absolute;left:6px;top:4px;color:#9ca3af;font:12px sans-serif;display:none;}
 </style>
 </head>
@@ -69,6 +70,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
   var lastTime = null;
   var times = [];
   var obs = [];
+  var boxEls = [];
 
   // Server times are UTC strings like "2026-11-05 15:51:00"
   function toSec(t) {
@@ -87,28 +89,44 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
     return null;
   }
 
-  // Draw each live order block as a shaded box from its start to the newest candle
+  // Draw each live order block as a solid box from its OB candle to the newest candle.
+  // Boxes are reused and repositioned, not rebuilt, so the chart does not flicker.
   function drawBoxes() {
-    overlay.innerHTML = '';
     var width = chartEl.clientWidth;
     var rightX = lastTime === null ? null : timeToX(lastTime);
+    var used = 0;
+
     obs.forEach(function (ob) {
       var x1 = timeToX(toSec(ob.startTime));
       var y1 = series.priceToCoordinate(ob.top);
       var y2 = series.priceToCoordinate(ob.bottom);
       if (x1 === null || y1 === null || y2 === null) return;
+
       var x2 = rightX === null ? width : rightX;
       var left = Math.max(0, Math.min(x1, x2));
       var right = Math.min(width, Math.max(x1, x2));
       if (right <= left) return;
-      var div = document.createElement('div');
+
+      var div = boxEls[used];
+      if (!div) {
+        div = document.createElement('div');
+        overlay.appendChild(div);
+        boxEls[used] = div;
+      }
+      used++;
+
       div.className = 'box ' + (ob.direction === 'bullish' ? 'bull' : 'bear');
+      div.style.display = 'block';
       div.style.left = left + 'px';
       div.style.width = (right - left) + 'px';
       div.style.top = Math.min(y1, y2) + 'px';
       div.style.height = Math.max(2, Math.abs(y2 - y1)) + 'px';
-      overlay.appendChild(div);
     });
+
+    // Hide any spare boxes left over from before
+    for (var i = used; i < boxEls.length; i++) {
+      boxEls[i].style.display = 'none';
+    }
   }
 
   function load() {
@@ -145,11 +163,17 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
       });
   }
 
+  // Redraw when the time or price range changes (zoom, scroll)
+  chart.timeScale().subscribeVisibleLogicalRangeChange(drawBoxes);
   chart.timeScale().subscribeVisibleTimeRangeChange(drawBoxes);
+
   window.addEventListener('resize', function () {
     chart.resize(window.innerWidth, window.innerHeight);
     drawBoxes();
   });
+
+  // Price-scale drags do not fire range events, so keep the boxes aligned on a short timer
+  setInterval(drawBoxes, 150);
 
   load();
   setInterval(load, 15000);
