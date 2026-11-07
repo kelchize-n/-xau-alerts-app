@@ -16,8 +16,8 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
 #chart{position:absolute;left:0;top:0;right:0;bottom:0;}
 #overlay{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;overflow:hidden;}
 .box{position:absolute;box-sizing:border-box;}
-.bull{background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);}
-.bear{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.55);}
+.bull{background:rgba(34,197,94,0.22);border:1px solid rgba(34,197,94,0.8);}
+.bear{background:rgba(239,68,68,0.22);border:1px solid rgba(239,68,68,0.8);}
 #msg{position:absolute;left:6px;top:4px;color:#9ca3af;font:12px sans-serif;display:none;}
 </style>
 </head>
@@ -67,6 +67,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
 
   var firstLoad = true;
   var lastTime = null;
+  var times = [];
   var obs = [];
 
   // Server times are UTC strings like "2026-11-05 15:51:00"
@@ -74,14 +75,25 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
     return Math.floor(Date.parse(String(t).replace(' ', 'T') + 'Z') / 1000);
   }
 
-  // Draw each live order block as a faint box from its start to the newest candle
+  // Screen x position for a time. If the exact time is not a candle time,
+  // use the next candle at or after it.
+  function timeToX(t) {
+    var ts = chart.timeScale();
+    var x = ts.timeToCoordinate(t);
+    if (x !== null) return x;
+    for (var i = 0; i < times.length; i++) {
+      if (times[i] >= t) return ts.timeToCoordinate(times[i]);
+    }
+    return null;
+  }
+
+  // Draw each live order block as a shaded box from its start to the newest candle
   function drawBoxes() {
     overlay.innerHTML = '';
-    var ts = chart.timeScale();
     var width = chartEl.clientWidth;
-    var rightX = lastTime === null ? null : ts.timeToCoordinate(lastTime);
+    var rightX = lastTime === null ? null : timeToX(lastTime);
     obs.forEach(function (ob) {
-      var x1 = ts.timeToCoordinate(toSec(ob.startTime));
+      var x1 = timeToX(toSec(ob.startTime));
       var y1 = series.priceToCoordinate(ob.top);
       var y2 = series.priceToCoordinate(ob.bottom);
       if (x1 === null || y1 === null || y2 === null) return;
@@ -116,6 +128,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
             return { time: toSec(c.time), open: c.open, high: c.high, low: c.low, close: c.close };
           }));
         }
+        times = candles.map(function (c) { return toSec(c.time); });
         lastTime = candles.length ? toSec(candles[candles.length - 1].time) : null;
         obs = json.obs || [];
         if (firstLoad && candles.length) {
@@ -124,6 +137,8 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
         }
         showMsg('');
         drawBoxes();
+        // Redraw once more after the chart has finished laying out
+        setTimeout(drawBoxes, 300);
       })
       .catch(function (e) {
         showMsg('Chart not loaded: ' + e.message + '. Retrying...');
