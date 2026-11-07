@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet, Text, View, FlatList, SafeAreaView, StatusBar, RefreshControl,
-  TouchableOpacity, useWindowDimensions, Linking, Platform, Alert,
+  TouchableOpacity, useWindowDimensions, Linking, Platform, Alert, AppState,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -85,6 +85,11 @@ async function testAlarm() {
   } catch (e) {
     Alert.alert('Test alarm failed', String(e && e.message ? e.message : e));
   }
+}
+
+// Tells the server the app was opened, so it stops repeating alerts
+function markSeen() {
+  fetch(SERVER_URL + '/seen?t=' + Date.now()).catch(() => {});
 }
 
 async function registerForPush() {
@@ -204,13 +209,22 @@ export default function App() {
       if (result.token) setPushToken(result.token);
       if (result.error) setPushError(result.error);
     });
+    markSeen();
     load();
     const timer = setInterval(load, POLL_MS);
-    return () => clearInterval(timer);
+    // Opening the app again (coming back to the foreground) also stops repeats
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') markSeen();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
   }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
+    markSeen();
     await load();
     setRefreshing(false);
   };
@@ -234,7 +248,7 @@ export default function App() {
         </View>
       </View>
 
-      <View style={{ height: Math.round(height * 0.40) }}>
+      <View style={{ height: Math.round(height * 0.30) }}>
         <Chart />
       </View>
 
