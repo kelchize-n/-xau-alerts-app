@@ -9,10 +9,14 @@ const PUSH_TOKEN = process.env.PUSH_TOKEN;
 const ALERT_TIMEFRAMES = ['5m', '15m', '1h'];
 // A new box alerts only if its break is on one of the last this-many closed candles.
 const ALERT_RECENT_BARS = 2;
-// A live order block repeats its alert this often until it is invalidated.
-const REPEAT_MS = 5 * 60 * 1000;
+// Each live order block sends at most this many pushes, then goes quiet.
+const MAX_PUSHES = 2;
+// Gap between the first push and the second push
+const REPEAT_MS = 2 * 60 * 1000;
+// Last time the app reported that it was opened (set by GET /seen)
+let lastSeen = 0;
 
-// Alert memory per order block id: { lastSent: timestamp or null }
+// Alert memory per order block id: { pushes: count sent, lastSent: timestamp }
 const alertState = new Map();
 // For the first 5 minutes after a restart we only record existing order
 // blocks, so old ones do not fire a flood of alerts.
@@ -123,6 +127,7 @@ function setCandles(name, candles) {
 
 // Send a high priority push to the tablet through Expo's push service.
 // channelId must match the channel created in app/App.js (ALARM_CHANNEL = 'obalarm').
+// No "sound" field: the sound comes from the channel setting on the phone.
 async function sendPush(ob, tf, repeat) {
   if (!PUSH_TOKEN) return;
   const bull = ob.direction === 'bullish';
@@ -136,7 +141,6 @@ async function sendPush(ob, tf, repeat) {
           (repeat ? ' (still live)' : ''),
         body: 'Range ' + ob.bottom.toFixed(2) + ' - ' + ob.top.toFixed(2) +
           (repeat ? '' : ' - break confirmed'),
-        sound: 'default',
         priority: 'high',
         channelId: 'obalarm',
       }),
@@ -163,7 +167,8 @@ function sendAlert(name, ob, repeat) {
 }
 
 // New live box: alert once if its break is fresh (and not during startup).
-// Known live box: repeat every REPEAT_MS until it is invalidated.
+// Then one repeat, at most MAX_PUSHES in total. No more pushes after that,
+// or once the app has been opened since the last push.
 function checkAlerts(name) {
   if (!ALERT_TIMEFRAMES.includes(name)) return;
   const n = (state.candles[name] || []).length;
@@ -179,12 +184,17 @@ function checkAlerts(name) {
     if (!entry) {
       const fresh = ob.status === 'confirmed' && ob.bosIndex >= n - ALERT_RECENT_BARS;
       const alertNow = fresh && !firstRun;
-      alertState.set(id, { lastSent: alertNow ? now : null });
+      alertState.set(id, { pushes: alertNow ? 1 : 0, lastSent: alertNow ? now : 0 });
       if (alertNow) sendAlert(name, ob, false);
       return;
     }
 
-    if (entry.lastSent !== null && now - entry.lastSent >= REPEAT_MS) {
+    // Stop after MAX_PUSHES, or if the app was opened after the last push
+    if (entry.pushes === 0 || entry.pushes >= MAX_PUSHES) return;
+    if (lastSeen > entry.lastSent) return;
+
+    if (now - entry.lastSent >= REPEAT_MS) {
+      entry.pushes += 1;
       entry.lastSent = now;
       sendAlert(name, ob, true);
     }
@@ -258,7 +268,11 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
   // Ignore query strings like ?v=3 when matching routes
   const path = req.url.split('?')[0];
-  if (path === '/alerts') {
+  if (path === '/seen') {
+    // The app calls this when it is opened, so repeats stop
+    lastSeen = Date.now();
+    res.end(JSON.stringify({ ok: true, lastSeen: lastSeen }));
+  } else if (path === '/alerts') {
     res.end(JSON.stringify({ price: state.price, alerts: state.alerts }));
   } else if (path === '/chart') {
     const tf = new URL(req.url, 'http://localhost').searchParams.get('tf') || '5m';
