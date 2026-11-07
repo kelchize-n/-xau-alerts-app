@@ -5,7 +5,8 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.TWELVE_DATA_KEY;
 const PUSH_TOKEN = process.env.PUSH_TOKEN;
 
-// Only these timeframes send push alerts. 1m and 3m show cards only.
+// Only these timeframes have order blocks and send push alerts.
+// 1m and 3m are chart-only (no order blocks, no alerts).
 const ALERT_TIMEFRAMES = ['5m', '15m', '1h'];
 // A new box alerts only if its break is on one of the last this-many closed candles.
 const ALERT_RECENT_BARS = 2;
@@ -16,7 +17,7 @@ const REPEAT_MS = 2 * 60 * 1000;
 // Last time the app reported that it was opened (set by GET /seen)
 let lastSeen = 0;
 
-// Alert memory per order block id: { pushes: count sent, lastSent: timestamp }
+// Alert memory per order block: { pushes: count sent, lastSent: timestamp }
 const alertState = new Map();
 // For the first 5 minutes after a restart we only record existing order
 // blocks, so old ones do not fire a flood of alerts.
@@ -190,7 +191,7 @@ function checkAlerts(name) {
   const liveIds = new Set();
 
   live.forEach((ob) => {
-    const id = name + '-' + ob.startTime + '-' + ob.bosTime;
+    const id = name + '|' + ob.id;
     liveIds.add(id);
     const entry = alertState.get(id);
 
@@ -223,7 +224,7 @@ function checkAlerts(name) {
 
   // Forget boxes that are no longer live so memory stays small
   [...alertState.keys()].forEach((id) => {
-    if (id.startsWith(name + '-') && !liveIds.has(id)) alertState.delete(id);
+    if (id.startsWith(name + '|') && !liveIds.has(id)) alertState.delete(id);
   });
 }
 
@@ -251,20 +252,20 @@ async function updateTimeframe(tf) {
     const candles = await fetchCandles(tf.interval, tf.size);
     if (!candles.length) throw new Error('no candles returned');
 
-    // The newest candle is still forming. Drop it before detection.
+    // The newest candle is still forming. Drop it before use.
     const closed = candles.slice(0, -1);
 
-    // Live price: close of the newest 1m candle (even if still forming)
     if (tf.name === '1m') {
+      // Live price: close of the newest 1m candle (even if still forming)
       state.price = candles[candles.length - 1].close;
+      setCandles('1m', closed);
+      // 3m chart candles are built from the 1m candles (no order blocks on 1m or 3m)
+      setCandles('3m', aggregate(closed, 3));
+    } else {
+      setCandles(tf.name, closed);
+      detectFor(tf.name);
     }
 
-    setCandles(tf.name, closed);
-    detectFor(tf.name);
-    if (tf.name === '1m') {
-      setCandles('3m', aggregate(closed, 3));
-      detectFor('3m');
-    }
     state.lastUpdate = new Date().toISOString();
     delete state.errors[tf.name];
   } catch (e) {
