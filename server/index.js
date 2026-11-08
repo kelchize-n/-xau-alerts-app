@@ -77,6 +77,16 @@ async function fetchCandles(interval, size) {
   }));
 }
 
+// Drop candles that start inside the weekend closure, so the chart and the
+// order block detector only see real trading candles (no flat weekend line).
+function removeWeekend(candles) {
+  return candles.filter((c) => {
+    const ms = Date.parse(String(c.time).replace(' ', 'T') + 'Z');
+    if (!Number.isFinite(ms)) return true;
+    return marketOpen(new Date(ms));
+  });
+}
+
 // Combine consecutive 1m candles into larger candles (e.g. 3 x 1m = 3m).
 // Only complete, aligned groups are kept, so the forming candle is dropped.
 function aggregate(candles, minutes) {
@@ -186,146 +196,4 @@ function checkAlerts(name) {
   if (!ALERT_TIMEFRAMES.includes(name)) return;
   const n = (state.candles[name] || []).length;
   const now = Date.now();
-  const open = marketOpen();
-  const live = (state.obs[name] || []).filter((ob) => ob.status !== 'invalidated');
-  const liveIds = new Set();
-
-  live.forEach((ob) => {
-    const id = name + '|' + ob.id;
-    liveIds.add(id);
-    const entry = alertState.get(id);
-
-    if (!open) {
-      // Market closed: send nothing, and mark this box as finished so it
-      // does not repeat when the market reopens.
-      if (entry) entry.pushes = MAX_PUSHES;
-      else alertState.set(id, { pushes: MAX_PUSHES, lastSent: 0 });
-      return;
-    }
-
-    if (!entry) {
-      const fresh = ob.status === 'confirmed' && ob.bosIndex >= n - ALERT_RECENT_BARS;
-      const alertNow = fresh && !firstRun;
-      alertState.set(id, { pushes: alertNow ? 1 : 0, lastSent: alertNow ? now : 0 });
-      if (alertNow) sendAlert(name, ob, false);
-      return;
-    }
-
-    // Stop after MAX_PUSHES, or if the app was opened after the last push
-    if (entry.pushes === 0 || entry.pushes >= MAX_PUSHES) return;
-    if (lastSeen > entry.lastSent) return;
-
-    if (now - entry.lastSent >= REPEAT_MS) {
-      entry.pushes += 1;
-      entry.lastSent = now;
-      sendAlert(name, ob, true);
-    }
-  });
-
-  // Forget boxes that are no longer live so memory stays small
-  [...alertState.keys()].forEach((id) => {
-    if (id.startsWith(name + '|') && !liveIds.has(id)) alertState.delete(id);
-  });
-}
-
-// Run order block detection for one timeframe. Errors are logged, not thrown,
-// so a detection problem never stops the candle fetching.
-function detectFor(name) {
-  try {
-    state.obs[name] = detectOrderBlocks(state.candles[name] || [], name);
-    checkAlerts(name);
-  } catch (e) {
-    console.error('OB detection failed', name, e.message);
-  }
-}
-
-function refreshLastError() {
-  const keys = Object.keys(state.errors);
-  state.lastError = keys.length
-    ? keys.map((k) => k + ': ' + state.errors[k]).join(' | ')
-    : null;
-}
-
-async function updateTimeframe(tf) {
-  try {
-    if (!API_KEY) throw new Error('TWELVE_DATA_KEY is not set');
-    const candles = await fetchCandles(tf.interval, tf.size);
-    if (!candles.length) throw new Error('no candles returned');
-
-    // The newest candle is still forming. Drop it before use.
-    const closed = candles.slice(0, -1);
-
-    if (tf.name === '1m') {
-      // Live price: close of the newest 1m candle (even if still forming)
-      state.price = candles[candles.length - 1].close;
-      setCandles('1m', closed);
-      // 3m chart candles are built from the 1m candles (no order blocks on 1m or 3m)
-      setCandles('3m', aggregate(closed, 3));
-    } else {
-      setCandles(tf.name, closed);
-      detectFor(tf.name);
-    }
-
-    state.lastUpdate = new Date().toISOString();
-    delete state.errors[tf.name];
-  } catch (e) {
-    state.errors[tf.name] = String(e.message || e);
-  }
-  refreshLastError();
-}
-
-// Start each timeframe a few seconds apart so calls do not bunch up
-TIMEFRAMES.forEach((tf, index) => {
-  setTimeout(() => {
-    updateTimeframe(tf);
-    setInterval(() => updateTimeframe(tf), tf.every * 60 * 1000);
-  }, index * 8000);
-});
-
-// Check repeats every minute using data already in memory (no API calls)
-setInterval(() => ALERT_TIMEFRAMES.forEach(checkAlerts), 60 * 1000);
-
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'application/json');
-  // Ignore query strings like ?v=3 when matching routes
-  const path = req.url.split('?')[0];
-  if (path === '/seen') {
-    // The app calls this when it is opened, so repeats stop
-    lastSeen = Date.now();
-    res.end(JSON.stringify({ ok: true, lastSeen: lastSeen }));
-  } else if (path === '/alerts') {
-    res.end(JSON.stringify({ price: state.price, alerts: state.alerts }));
-  } else if (path === '/chart') {
-    const tf = new URL(req.url, 'http://localhost').searchParams.get('tf') || '5m';
-    res.end(JSON.stringify({
-      tf: tf,
-      candles: state.candles[tf] || [],
-      obs: (state.obs[tf] || []).filter((ob) => ob.status !== 'invalidated'),
-    }));
-  } else if (path === '/gaps') {
-    const summary = {};
-    Object.keys(state.gaps).forEach((name) => {
-      const open = state.gaps[name].filter((g) => !g.filled);
-      summary[name] = { total: state.gaps[name].length, open: open.length, gaps: open };
-    });
-    res.end(JSON.stringify({ price: state.price, lastUpdate: state.lastUpdate, timeframes: summary }));
-  } else if (path === '/obs') {
-    res.end(JSON.stringify({ price: state.price, lastUpdate: state.lastUpdate, timeframes: state.obs }));
-  } else if (path === '/status') {
-    const counts = {};
-    Object.keys(state.candles).forEach((name) => { counts[name] = state.candles[name].length; });
-    res.end(JSON.stringify({
-      ok: true,
-      price: state.price,
-      candles: counts,
-      lastUpdate: state.lastUpdate,
-      lastError: state.lastError,
-      errors: state.errors,
-    }));
-  } else {
-    res.end(JSON.stringify({ ok: true, name: 'XAU Alert Server' }));
-  }
-});
-
-server.listen(PORT, () => console.log('Server running on port ' + PORT));
+  const open = 
