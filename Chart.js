@@ -20,6 +20,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
 .bull{background:rgba(34,197,94,0.55);border:1px solid #22c55e;}
 .bear{background:rgba(239,68,68,0.55);border:1px solid #ef4444;}
 #msg{position:absolute;left:6px;top:4px;color:#9ca3af;font:12px sans-serif;display:none;}
+#info{position:absolute;left:6px;bottom:4px;color:#9ca3af;font:11px sans-serif;}
 </style>
 </head>
 <body>
@@ -27,6 +28,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
   <div id="chart"></div>
   <div id="overlay"></div>
   <div id="msg"></div>
+  <div id="info"></div>
 </div>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
@@ -37,6 +39,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
   var chartEl = document.getElementById('chart');
   var overlay = document.getElementById('overlay');
   var msg = document.getElementById('msg');
+  var info = document.getElementById('info');
 
   function showMsg(text) {
     msg.textContent = text;
@@ -67,7 +70,6 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
   }
 
   var firstLoad = true;
-  var lastTime = null;
   var times = [];
   var obs = [];
   var boxEls = [];
@@ -77,27 +79,29 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
     return Math.floor(Date.parse(String(t).replace(' ', 'T') + 'Z') / 1000);
   }
 
-  // Screen x position for a time. If the exact time is not a candle time,
-  // use the next candle at or after it.
-  function timeToX(t) {
-    var ts = chart.timeScale();
-    var x = ts.timeToCoordinate(t);
-    if (x !== null) return x;
+  // Index of the first candle at or after time t (-1 if none)
+  function indexFor(t) {
     for (var i = 0; i < times.length; i++) {
-      if (times[i] >= t) return ts.timeToCoordinate(times[i]);
+      if (times[i] >= t) return i;
     }
-    return null;
+    return -1;
   }
 
   // Draw each live order block as a solid box from its OB candle to the newest candle.
+  // Positions use candle index, so boxes line up on the line chart and the candle chart.
   // Boxes are reused and repositioned, not rebuilt, so the chart does not flicker.
   function drawBoxes() {
+    var ts = chart.timeScale();
     var width = chartEl.clientWidth;
-    var rightX = lastTime === null ? null : timeToX(lastTime);
+    var lastIdx = times.length - 1;
+    var rightX = lastIdx >= 0 ? ts.logicalToCoordinate(lastIdx) : null;
     var used = 0;
+    var drawn = 0;
 
     obs.forEach(function (ob) {
-      var x1 = timeToX(toSec(ob.startTime));
+      var idx = indexFor(toSec(ob.startTime));
+      if (idx < 0) return;
+      var x1 = ts.logicalToCoordinate(idx);
       var y1 = series.priceToCoordinate(ob.top);
       var y2 = series.priceToCoordinate(ob.bottom);
       if (x1 === null || y1 === null || y2 === null) return;
@@ -114,6 +118,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
         boxEls[used] = div;
       }
       used++;
+      drawn++;
 
       div.className = 'box ' + (ob.direction === 'bullish' ? 'bull' : 'bear');
       div.style.display = 'block';
@@ -127,6 +132,9 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
     for (var i = used; i < boxEls.length; i++) {
       boxEls[i].style.display = 'none';
     }
+
+    // Small counter so you can see how many boxes arrived and how many were drawn
+    info.textContent = obs.length ? (TF + ' OB: ' + drawn + ' of ' + obs.length + ' drawn') : '';
   }
 
   function load() {
@@ -147,7 +155,6 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
           }));
         }
         times = candles.map(function (c) { return toSec(c.time); });
-        lastTime = candles.length ? toSec(candles[candles.length - 1].time) : null;
         obs = json.obs || [];
         if (firstLoad && candles.length) {
           chart.timeScale().fitContent();
@@ -163,7 +170,7 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
       });
   }
 
-  // Redraw when the time or price range changes (zoom, scroll)
+  // Redraw when the range changes (zoom, scroll)
   chart.timeScale().subscribeVisibleLogicalRangeChange(drawBoxes);
   chart.timeScale().subscribeVisibleTimeRangeChange(drawBoxes);
 
@@ -186,7 +193,8 @@ html,body{margin:0;padding:0;height:100%;background:#0b0f1a;overflow:hidden;}
 export default function Chart() {
   const [tf, setTf] = useState('5m');
   // TradingView-style codes kept for the toggle: "1" = candles, "2" = line
-  const [style, setStyle] = useState('1');
+  // Line is the default, since your strategy uses the line chart.
+  const [style, setStyle] = useState('2');
 
   return (
     <View style={styles.container}>
